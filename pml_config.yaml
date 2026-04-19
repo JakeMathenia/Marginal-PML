@@ -1,0 +1,79 @@
+# ============================================================
+# Marginal PML Pricing Tool - Configuration File
+# ============================================================
+#
+# Edit the settings below, then run:   python pml_tool.py
+# No command-line arguments needed when this file is present.
+#
+# To ignore this config and use CLI args:  python pml_tool.py --portfolio ...
+# ============================================================
+
+
+# --- FILE PATHS ---
+
+# Path to portfolio/baseline ELT file (CSV or Excel)
+portfolio: data/portfolio.csv
+
+# Single account file to price (leave blank if using quote_folder)
+quote: data/accounts/ACCT_Office_Tower.csv
+
+# OR: folder of account files for batch pricing (leave blank if using quote)
+# quote_folder: data/accounts
+
+# Output Excel report path (auto-generates timestamped name if blank)
+output: results.xlsx
+
+# Excel sheet name (blank = first sheet)
+sheet:
+
+
+# --- PRICING MODE ---
+
+# 'subtract' = RI pricing:       Marginal = PML(Portfolio) - PML(Portfolio - Account)
+# 'add'      = New business:      Marginal = PML(Portfolio + Account) - PML(Portfolio)
+mode: subtract
+
+
+# --- RETURN PERIODS ---
+
+# Comma-separated return periods to calculate
+return_periods: 50, 100, 250
+
+
+# --- PRICING PARAMETERS ---
+
+# Return on Capital target (0.15 = 15%)
+roc: 0.15
+
+# Return period used for pricing capital calculation
+pricing_rp: 100
+
+# Capital rate (fraction of marginal PML held as capital, 0.25 = 25%)
+capital_rate: 0.25
+
+# Per-RP overrides (optional; pricing_rp selects which one to use)
+# capital_rate_50: 0.20
+# capital_rate_100: 0.25
+# capital_rate_250: 0.35
+
+
+# --- OUTPUT OPTIONS ---
+
+# Show baseline + combined PML columns (not just marginal)
+show_combined_pml: true
+
+# Show detailed progress per account
+verbose: true
+
+# Suppress all output except errors
+quiet: false
+
+
+# --- WORKBENCH (UI) OPTIONS ---
+
+# Traffic light thresholds for % increase in portfolio PML
+yellow_threshold: 2.0
+red_threshold: 5.0
+
+# Capital rate override (default: 0.25 for 100yr)
+capital_rate: 0.25
