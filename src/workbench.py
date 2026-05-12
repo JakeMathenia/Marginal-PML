@@ -362,7 +362,7 @@ st.markdown('<p class="main-header">📊 Marginal PML Workbench</p>', unsafe_all
 st.markdown('<p class="sub-header">Analyze marginal portfolio impact with visual insights</p>', unsafe_allow_html=True)
 
 # Create tabs
-tab1, tab2, tab3 = st.tabs(["📁 Data Ingestion", "📈 Impact Analysis", "📋 Pricing Summary"])
+tab1, tab2, tab3, tab4 = st.tabs(["📁 Data Ingestion", "📈 Impact Analysis", "📋 Pricing Summary", "🔍 Model Explainability"])
 
 
 # =============================================================================
@@ -853,6 +853,258 @@ with tab3:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
+
+
+# =============================================================================
+# TAB 4: MODEL EXPLAINABILITY (SHAP)
+# =============================================================================
+
+with tab4:
+    st.markdown("### 🔍 Model Explainability — SHAP Analysis")
+    st.markdown(
+        "Understand **why** a property has a high predicted loss. SHAP (SHapley Additive "
+        "exPlanations) decomposes the model prediction into the contribution of each feature."
+    )
+
+    st.info(
+        "💡 **How to use:** Load a fitted severity model and a feature matrix, then this panel "
+        "shows which property characteristics (flood zone, construction age, hurricane exposure, "
+        "etc.) are driving the predicted loss amount."
+    )
+
+    # Model file uploader
+    col_left, col_right = st.columns([1, 2])
+
+    with col_left:
+        st.markdown("#### Load Saved Model")
+        model_file = st.file_uploader(
+            "Upload severity_model.joblib",
+            type=['joblib'],
+            key='shap_model_upload',
+            help="Upload the severity model saved from notebook 04"
+        )
+
+        feature_file = st.file_uploader(
+            "Upload feature matrix (CSV/parquet)",
+            type=['csv', 'parquet'],
+            key='shap_features_upload',
+            help="Upload the features.parquet or a CSV of engineered features"
+        )
+
+        n_samples = st.slider(
+            "Number of properties to explain",
+            min_value=50, max_value=1000, value=200, step=50,
+            help="Larger sample = more accurate SHAP summary, but slower"
+        )
+
+        run_shap = st.button("▶ Run SHAP Analysis", type="primary", use_container_width=True)
+
+    with col_right:
+        st.markdown("#### Feature Descriptions")
+        descriptions = {
+            'flood_zone_risk_score':      '🌊 Flood zone risk (0=minimal, 1=coastal V-zone)',
+            'is_coastal_high_risk':       '🏖️ V/VE zone flag (coastal velocity zone)',
+            'is_high_risk_zone':          '⚠️ SFHA indicator (A or V zone)',
+            'occupancy_is_residential':   '🏠 Residential building type',
+            'has_basement':               '🪜 Basement/crawlspace (increases flood exposure)',
+            'log_building_coverage':      '💵 Log of insurance coverage amount',
+            'coverage_to_value_ratio':    '📊 Coverage / property value (adverse selection)',
+            'num_floors':                 '🏢 Number of floors (upper floors safer)',
+            'construction_age_years':     '📅 Years since construction (older = more vulnerable)',
+            'is_post_firm':               '📋 Built after FEMA flood maps (post-1978)',
+            'has_elevation_cert':         '📐 Elevation certificate on file',
+            'hurricane_risk_score':       '🌀 Hurricane category risk (0=TS, 1=Cat5)',
+            'is_hurricane_peril':         '🌪️ Hurricane/tropical/surge event',
+            'is_flood_peril':             '🌧️ Riverine or coastal flood event',
+            'is_coastal_state':           '🗺️ Located in coastal state',
+            'log_storm_damage':           '💨 Log of NOAA-reported storm damage',
+        }
+        for feat, desc in descriptions.items():
+            st.caption(f"**{feat}**: {desc}")
+
+    st.markdown("---")
+
+    # SHAP results section
+    if run_shap:
+        if model_file is None or feature_file is None:
+            st.warning("⚠️ Please upload both a severity model (.joblib) and feature matrix (CSV/parquet).")
+        else:
+            try:
+                import joblib
+                import shap
+                import sys
+                sys.path.insert(0, str(Path(__file__).parent))
+                from severity_model import SeverityModel
+
+                with st.spinner("Loading model and computing SHAP values..."):
+                    # Load model
+                    model_bytes = io.BytesIO(model_file.read())
+                    model_data = joblib.load(model_bytes)
+                    sev_model = SeverityModel()
+                    sev_model._model         = model_data['model']
+                    sev_model._feature_names = model_data['feature_names']
+                    sev_model._train_rmse_log = model_data['train_rmse_log']
+                    sev_model._is_fitted     = True
+
+                    # Load features
+                    feat_bytes = io.BytesIO(feature_file.read())
+                    if feature_file.name.endswith('.parquet'):
+                        X_explain = pd.read_parquet(feat_bytes)
+                    else:
+                        X_explain = pd.read_csv(feat_bytes)
+
+                    # Sample
+                    sample_size = min(n_samples, len(X_explain))
+                    X_sample = X_explain.sample(sample_size, random_state=42)
+                    X_aligned = sev_model._align_features(X_sample)
+
+                    # Compute SHAP values
+                    explainer = shap.TreeExplainer(sev_model._model)
+                    shap_values = explainer.shap_values(X_aligned)
+                    mean_abs_shap = np.abs(shap_values).mean(axis=0)
+
+                    shap_df = pd.DataFrame({
+                        'Feature': sev_model._feature_names,
+                        'Mean |SHAP|': mean_abs_shap,
+                    }).sort_values('Mean |SHAP|', ascending=False).reset_index(drop=True)
+
+                st.success(f"✅ SHAP computed on {sample_size:,} properties")
+
+                # --- Chart 1: Bar chart of mean |SHAP| ---
+                st.markdown("#### Feature Importance (Mean |SHAP| Value)")
+                st.caption("Higher = that feature contributes more to the predicted loss amount")
+
+                fig_bar = go.Figure(go.Bar(
+                    x=shap_df['Mean |SHAP|'],
+                    y=shap_df['Feature'],
+                    orientation='h',
+                    marker=dict(
+                        color=shap_df['Mean |SHAP|'],
+                        colorscale='Reds',
+                        showscale=False
+                    ),
+                    text=shap_df['Mean |SHAP|'].round(4),
+                    textposition='outside',
+                ))
+                fig_bar.update_layout(
+                    xaxis_title='Mean |SHAP Value| (log-severity scale)',
+                    yaxis={'categoryorder': 'total ascending'},
+                    height=500,
+                    margin=dict(l=200),
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+                # --- Chart 2: SHAP bee-swarm (scatter per feature) ---
+                st.markdown("#### SHAP Value Distribution (Beeswarm)")
+                st.caption(
+                    "Each dot is one property. Red = high feature value, Blue = low. "
+                    "Dots to the right = pushed the predicted loss UP; left = pushed DOWN."
+                )
+
+                top_n = min(10, len(sev_model._feature_names))
+                top_features = shap_df['Feature'].head(top_n).tolist()
+                top_idx = [sev_model._feature_names.index(f) for f in top_features]
+
+                fig_bee = go.Figure()
+                for i, feat_idx in enumerate(reversed(top_idx)):
+                    feat_name = sev_model._feature_names[feat_idx]
+                    sv = shap_values[:, feat_idx]
+                    fv = X_aligned.iloc[:, feat_idx].values
+
+                    # Normalize feature values for color
+                    fv_norm = (fv - fv.min()) / (fv.max() - fv.min() + 1e-9)
+
+                    fig_bee.add_trace(go.Scatter(
+                        x=sv,
+                        y=np.full(len(sv), feat_name) + np.random.normal(0, 0.1, len(sv)),
+                        mode='markers',
+                        marker=dict(
+                            size=5,
+                            color=fv_norm,
+                            colorscale='RdBu_r',
+                            opacity=0.6,
+                        ),
+                        name=feat_name,
+                        showlegend=False,
+                        hovertemplate=(
+                            f"<b>{feat_name}</b><br>"
+                            "SHAP: %{x:.4f}<br>"
+                            "Feature value: %{text}<extra></extra>"
+                        ),
+                        text=[f"{v:.3f}" for v in fv],
+                    ))
+
+                fig_bee.add_vline(x=0, line_dash='dash', line_color='gray')
+                fig_bee.update_layout(
+                    xaxis_title='SHAP Value (impact on log-severity)',
+                    yaxis_title='Feature',
+                    height=max(400, top_n * 50),
+                    margin=dict(l=200),
+                )
+                st.plotly_chart(fig_bee, use_container_width=True)
+
+                # --- Table ---
+                st.markdown("#### Top Feature Impacts")
+                display_df = shap_df.copy()
+                display_df['Mean |SHAP|'] = display_df['Mean |SHAP|'].round(5)
+                display_df['Rank'] = range(1, len(display_df) + 1)
+                display_df['Description'] = display_df['Feature'].map(descriptions).fillna('')
+                st.dataframe(
+                    display_df[['Rank', 'Feature', 'Mean |SHAP|', 'Description']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # Download SHAP summary
+                shap_csv = io.StringIO()
+                shap_df.to_csv(shap_csv, index=False)
+                st.download_button(
+                    "📥 Download SHAP Summary CSV",
+                    data=shap_csv.getvalue(),
+                    file_name="shap_feature_importance.csv",
+                    mime="text/csv",
+                )
+
+            except ImportError as e:
+                st.error(f"Missing dependency: {e}. Run: pip install shap joblib")
+            except Exception as e:
+                st.error(f"SHAP analysis error: {e}")
+                st.exception(e)
+
+    else:
+        # Placeholder when SHAP hasn't been run yet
+        st.markdown("#### 📌 What SHAP Shows")
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown("""
+            **🌊 Flood Zone**
+            V/VE zones will show the largest
+            positive SHAP values — they push
+            predicted losses the most.
+            """)
+
+        with col2:
+            st.markdown("""
+            **📅 Construction Age**
+            Older properties (pre-FIRM) will
+            show negative SHAP contribution
+            vs. post-1978 construction.
+            """)
+
+        with col3:
+            st.markdown("""
+            **🌀 Hurricane Category**
+            Cat 4-5 events have much larger
+            SHAP values than average —
+            key driver of tail losses.
+            """)
+
+        st.markdown("---")
+        st.markdown(
+            "Upload a **severity_model.joblib** (from `models/` directory after running "
+            "notebook 04) and a **features.parquet** (from `data/raw/`) to activate this panel."
+        )
 
 
 # =============================================================================

@@ -145,17 +145,10 @@ The `price_account_batch()` method also supports this parameter and will automat
 
 ## Testing
 
-Three test scripts are provided:
-
-1. **test_combined_pml.py**: Basic functionality test
-2. **demo_combined_pml.py**: Interactive comparison demo
-3. **show_results.py**: Display Excel output in terminal
-
-Run any of these to see the feature in action:
+Run the end-to-end pipeline test to verify the enhanced reporting works:
 
 ```bash
-python test_combined_pml.py
-python demo_combined_pml.py
+python tests/test_pipeline.py
 ```
 
 ## Backward Compatibility

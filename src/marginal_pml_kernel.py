@@ -33,7 +33,7 @@ from scipy.optimize import brentq
 class MomentsConfig:
     """Configuration for moment calculations and PML solving."""
     use_poisson_aep: bool = True  # True = AEP = 1-exp(-λ); False = AEP = λ
-    rp_tolerance: float = 0.5  # Convergence tolerance in years
+    rp_tolerance: float = 0.0000005  # Convergence tolerance in years
     brent_xtol: float = 100.0  # Absolute tolerance on PML ($)
     brent_rtol: float = 1e-6  # Relative tolerance for Brent's method
     max_iterations: int = 10000  # Maximum iterations for root finding
