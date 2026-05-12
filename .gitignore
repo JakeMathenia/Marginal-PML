@@ -18,7 +18,6 @@ ENV/
 
 # Jupyter
 .ipynb_checkpoints/
-*.ipynb
 
 # Data — raw source files (large, not for version control)
 data/raw/
